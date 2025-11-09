@@ -1,0 +1,19 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    container_name: axisfinance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: axis
+      POSTGRES_PASSWORD: axis_password
+      POSTGRES_DB: axis_finance
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:
+
+
+

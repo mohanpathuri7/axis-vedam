@@ -1,0 +1,173 @@
+// Data model for AxisFinance backend
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Flat {
+  id       Int       @id @default(autoincrement())
+  number   String    @unique
+  floor    Int?
+  bhk      String?
+  sizeSqft Int?
+  maintenanceBasis MaintenanceBasis @default(per_sqft)
+  fixedMonthlyDue  Decimal? @db.Decimal(10,2)
+  carryForward     Decimal  @db.Decimal(12,2) @default(0)
+
+  flatmates Flatmate[]
+  payments  Payment[]
+  ledgers   Ledger[]
+  reminders CycleReminder[]
+}
+
+model Flatmate {
+  id          Int      @id @default(autoincrement())
+  fullName    String
+  email       String?
+  phone       String?
+  moveInDate  DateTime?
+  moveOutDate DateTime?
+  isActive    Boolean  @default(true)
+
+  flatId Int
+  flat   Flat     @relation(fields: [flatId], references: [id], onDelete: Cascade)
+
+  payments Payment[]
+}
+
+model MaintenanceCycle {
+  id             Int      @id @default(autoincrement())
+  year           Int
+  month          Int
+  dueAmount      Decimal  @db.Decimal(10,2)
+  dueDate        DateTime?
+  lateFeePercent Decimal  @db.Decimal(5,2) @default(3) // 3% late fee
+  gracePeriodDays Int     @default(3) // 3 days grace period
+  status         CycleStatus @default(active)
+
+  payments Payment[]
+  ledgers  Ledger[]
+  reminders CycleReminder[]
+
+  @@unique([year, month])
+}
+
+model Payment {
+  id         Int      @id @default(autoincrement())
+  amount     Decimal  @db.Decimal(10,2)
+  lateFee    Decimal  @db.Decimal(10,2) @default(0)
+  lateFeeWaived Boolean @default(false) // Admin can waive late fee
+  paidAt     DateTime @default(now())
+  method     PaymentMethod
+  reference  String?
+  status     PaymentStatus @default(success)
+  isOverdue  Boolean  @default(false) // Paid after grace period
+
+  flatId     Int
+  flat       Flat      @relation(fields: [flatId], references: [id], onDelete: Cascade)
+
+  flatmateId Int?
+  flatmate   Flatmate? @relation(fields: [flatmateId], references: [id], onDelete: SetNull)
+
+  cycleId    Int
+  cycle      MaintenanceCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  upi
+  card
+}
+
+enum PaymentStatus {
+  success
+  failed
+  pending
+}
+
+model Ledger {
+  id              Int      @id @default(autoincrement())
+  flatId          Int
+  flat            Flat     @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  cycleId         Int
+  cycle           MaintenanceCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  openingBalance  Decimal  @db.Decimal(12,2) @default(0)
+  monthlyCharge   Decimal  @db.Decimal(10,2)
+  paymentsTotal   Decimal  @db.Decimal(12,2) @default(0)
+  adjustments     Decimal  @db.Decimal(12,2) @default(0)
+  closingBalance  Decimal  @db.Decimal(12,2)
+
+  @@unique([flatId, cycleId])
+}
+
+enum MaintenanceBasis {
+  per_sqft
+  fixed
+}
+
+model ReminderSetting {
+  id                 Int      @id @default(autoincrement())
+  frequency          ReminderFrequency @default(daily)
+  hourUtc            Int      @default(9)
+  businessHoursStart Int      @default(9)
+  businessHoursEnd   Int      @default(18)
+  channels           String   @default("email") // comma-separated: email,sms
+}
+
+model ReminderLog {
+  id        Int      @id @default(autoincrement())
+  target    String
+  channel   String
+  message   String
+  status    String
+  createdAt DateTime @default(now())
+}
+
+enum ReminderFrequency {
+  daily
+  twice_daily
+  weekly
+}
+
+enum CycleStatus {
+  active   // Current/future cycle
+  overdue  // Past grace period with pending payments
+  closed   // All payments collected
+}
+
+model CycleReminder {
+  id        Int      @id @default(autoincrement())
+  cycleId   Int
+  cycle     MaintenanceCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  flatId    Int
+  flat      Flat     @relation(fields: [flatId], references: [id], onDelete: Cascade)
+  sentAt    DateTime @default(now())
+  channel   ReminderChannel
+  status    ReminderStatus @default(sent)
+  message   String?
+  
+  @@index([cycleId, flatId])
+}
+
+enum ReminderChannel {
+  email
+  whatsapp
+  sms
+  all
+}
+
+enum ReminderStatus {
+  sent
+  delivered
+  failed
+  pending
+}
+
+
+
